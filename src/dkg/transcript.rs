@@ -4,7 +4,8 @@ use ark_ec::hashing::curve_maps::wb::{WBConfig, WBMap};
 use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
 use ark_ec::pairing::Pairing;
 use ark_ec::{CurveGroup, PrimeGroup, VariableBaseMSM};
-use std::hash::{Hash, Hasher};
+use ark_std::vec::Vec;
+use core::hash::{Hash, Hasher};
 
 /// Full transcript of a (running) DKG protocol.
 /// Contains a secret sharing aggregated from a number of dealers,

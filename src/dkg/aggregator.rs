@@ -6,6 +6,8 @@ use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
 use ark_ec::pairing::Pairing;
 use ark_ec::CurveGroup;
 use ark_std::rand::Rng;
+use ark_std::vec;
+use ark_std::vec::Vec;
 use hashbrown::{HashMap, HashSet};
 
 /// Aggregates DKG transcripts into a fully-verifiable DKG transcript.

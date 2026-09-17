@@ -7,6 +7,7 @@ use ark_ff::field_hashers::DefaultFieldHasher;
 use ark_ff::Zero;
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
+use ark_std::vec;
 use ark_std::UniformRand;
 
 use sha2::Sha256;

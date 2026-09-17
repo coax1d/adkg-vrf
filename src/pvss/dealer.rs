@@ -6,6 +6,7 @@ use ark_poly::{DenseUVPolynomial, Polynomial};
 use crate::pvss::{Params, SecretSharing, SecretSharingWithWitness};
 use ark_poly::univariate::DensePolynomial;
 use ark_std::rand::Rng;
+use ark_std::vec::Vec;
 use ark_std::{end_timer, start_timer, UniformRand};
 
 impl<C: Pairing> Params<C> {

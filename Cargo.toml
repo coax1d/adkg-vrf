@@ -10,11 +10,13 @@ ark-ff = { version = "0.5", default-features = false }
 ark-ec = { version = "0.5", default-features = false }
 ark-poly = { version = "0.5", default-features = false }
 ark-serialize = { version = "0.5", default-features = false, features = ["derive"] }
-ark-transcript = { git = "https://github.com/w3f/ark-transcript" }
+# Pinned to the last arkworks-0.5-compatible commit; the default branch bumped
+# to arkworks 0.6 (w3f/ark-transcript PR #3), which breaks this crate.
+ark-transcript = { git = "https://github.com/w3f/ark-transcript", rev = "f7e27015" }
 ark-bls12-381 = { version = "0.5", default-features = false, features = ["curve"] }
 hashbrown = "0.15"
-sha2 = "0.10.9"
-derivative = "2.2"
+sha2 = { version = "0.10.9", default-features = false }
+derivative = { version = "2.2", features = ["use_core"] }
 
 [dev-dependencies]
 criterion = "0.7"

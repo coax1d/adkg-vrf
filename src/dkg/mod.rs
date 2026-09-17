@@ -8,6 +8,8 @@ use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
 use ark_ec::pairing::Pairing;
 use ark_ec::CurveGroup;
 use ark_std::rand::Rng;
+use ark_std::vec;
+use ark_std::vec::Vec;
 use ark_std::UniformRand;
 use hashbrown::{HashMap, HashSet};
 use transcript::{ContributionReceipt, Transcript};

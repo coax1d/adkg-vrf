@@ -7,6 +7,7 @@ use ark_ec::pairing::Pairing;
 use ark_ec::{CurveGroup, PrimeGroup};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_std::vec::Vec;
 
 /// An Aggregatable **Publicly Verifiable Secret Sharing** (PVSS) protocol.
 
