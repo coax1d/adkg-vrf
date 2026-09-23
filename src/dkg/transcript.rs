@@ -5,6 +5,7 @@ use ark_ec::hashing::curve_maps::wb::{WBConfig, WBMap};
 use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
 use ark_ec::pairing::Pairing;
 use ark_ec::{CurveGroup, PrimeGroup, VariableBaseMSM};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::vec::Vec;
 use core::hash::{Hash, Hasher};
 
@@ -12,7 +13,7 @@ use core::hash::{Hash, Hasher};
 /// Contains a secret sharing aggregated from a number of dealers,
 /// and the corresponding signatures from the dealers
 /// with weights/counts (number of times the dealing has been aggregated).
-#[derive(Clone, Debug)] //TODO: make a map, and eq
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)] //TODO: make a map, and eq
 pub struct Transcript<C: Pairing> {
     pub agg_ss: SecretSharingWithWitness<C>,
     pub receipts: Vec<(ContributionReceipt<C>, u32)>,
@@ -24,7 +25,7 @@ pub struct Transcript<C: Pairing> {
 /// The keys `ssk` and `sh` are ephemeral (used by an honest dealer once),
 /// `(sk, pk)` is the dealer's long-term keypair.
 /// Together the signatures show that who knows `sk`, knows also `ssk` and `sh`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ContributionReceipt<C: Pairing> {
     // BLS public keys in G1
     c: C::G1Affine,

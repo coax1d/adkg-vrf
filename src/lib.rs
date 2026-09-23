@@ -86,6 +86,7 @@ mod tests {
     use ark_ec::{AffineRepr, CurveGroup, PrimeGroup, VariableBaseMSM};
     use ark_ff::Zero;
     use ark_poly::EvaluationDomain;
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
     use ark_std::test_rng;
     use ark_std::vec::Vec;
     use hashbrown::HashMap;
@@ -258,6 +259,23 @@ mod tests {
         transcript.agg_ss.payload.bgpk[0] =
             (transcript.agg_ss.payload.bgpk[0] + G2Projective::generator()).into_affine();
         assert_eq!(dkg.verify(&transcript, rng), Err(Error::InvalidSharing));
+    }
+
+    #[test]
+    fn transcript_serialization_roundtrip() {
+        let rng = &mut test_rng();
+
+        let dealer = BlsSigner::<Bls12_381>::new(rng);
+        let dkg =
+            Dkg::<Bls12_381>::new(vec![dealer.bls_pk_g2], 1, vec![dealer.bls_pk_g1], 1).unwrap();
+        let transcript = dkg.deal_and_sign(rng, dealer.pk_in_g1()).unwrap();
+
+        let mut bytes = Vec::new();
+        transcript.serialize_compressed(&mut bytes).unwrap();
+        let deserialized = Transcript::<Bls12_381>::deserialize_compressed(&bytes[..]).unwrap();
+
+        assert!(dkg.verify(&deserialized, rng).is_ok());
+        assert_eq!(deserialized.receipts, transcript.receipts);
     }
 
     #[test]
