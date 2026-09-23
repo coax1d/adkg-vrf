@@ -2,7 +2,7 @@ pub mod aggregator;
 pub mod transcript;
 
 use crate::pvss::SecretSharingWithWitness;
-use crate::{pvss, ThresholdCrypto};
+use crate::{pvss, Error, ThresholdCrypto};
 use ark_ec::hashing::curve_maps::wb::{WBConfig, WBMap};
 use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
 use ark_ec::pairing::Pairing;
@@ -33,7 +33,7 @@ pub fn deal_and_sign<C: Pairing, R: Rng>(
     pvss: &pvss::Params<C>,
     rng: &mut R,
     dealer: (C::ScalarField, C::G1Affine),
-) -> Result<Transcript<C>, ()>
+) -> Result<Transcript<C>, Error>
 where
     <C::G2 as CurveGroup>::Config: WBConfig,
     WBMap<<C::G2 as CurveGroup>::Config>: MapToCurve<C::G2>,
@@ -58,9 +58,9 @@ where
         dealer_pks: Vec<C::G1Affine>,
         t_dkg: usize,
         verifier: pvss::Verifier<C>,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, Error> {
         if t_dkg == 0 || t_dkg > dealer_pks.len() || verifier.config != pvss.config {
-            return Err(());
+            return Err(Error::InvalidConfig);
         }
         let dealer_pks: HashSet<_> = dealer_pks.into_iter().collect();
 
@@ -78,7 +78,7 @@ where
         t_pvss: usize,
         dealer_pks: Vec<C::G1Affine>,
         t_dkg: usize,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, Error> {
         let pvss = pvss::Params::<C>::new(signer_pks, t_pvss)?;
         let verifier = pvss::Verifier::new(pvss.config.clone());
         Self::from_pvss(pvss, dealer_pks, t_dkg, verifier)
@@ -88,11 +88,11 @@ where
         &self,
         rng: &mut R,
         dealer: (C::ScalarField, C::G1Affine),
-    ) -> Result<Transcript<C>, ()> {
+    ) -> Result<Transcript<C>, Error> {
         deal_and_sign(&self.pvss, rng, dealer)
     }
 
-    pub fn verify<R: Rng>(&self, transcript: &Transcript<C>, rng: &mut R) -> Result<(), ()>
+    pub fn verify<R: Rng>(&self, transcript: &Transcript<C>, rng: &mut R) -> Result<(), Error>
     where
         <C::G2 as CurveGroup>::Config: WBConfig,
         WBMap<<C::G2 as CurveGroup>::Config>: MapToCurve<C::G2>,
@@ -140,9 +140,13 @@ where
         self.authorized_contributions(t).len() >= self.t_dkg
     }
 
-    pub fn finalize<R: Rng>(self, t: Transcript<C>, rng: &mut R) -> Result<ThresholdCrypto<C>, ()> {
+    pub fn finalize<R: Rng>(
+        self,
+        t: Transcript<C>,
+        rng: &mut R,
+    ) -> Result<ThresholdCrypto<C>, Error> {
         if !self.enough_contributions(&t) {
-            return Err(());
+            return Err(Error::NotEnoughContributions);
         }
         self.verify(&t, rng)?;
         Ok(ThresholdCrypto {

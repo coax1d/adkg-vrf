@@ -105,7 +105,8 @@ where
 }
 
 impl<C: Pairing> StandaloneSig<C> {
-    pub fn verify_unoptimized(&self, m: C::G1, g2: C::G2Affine) {
-        assert_eq!(C::pairing(self.sig, g2), C::pairing(m.into(), self.pk));
+    #[must_use]
+    pub fn verify_unoptimized(&self, m: C::G1, g2: C::G2Affine) -> bool {
+        C::pairing(self.sig, g2) == C::pairing(m.into(), self.pk)
     }
 }

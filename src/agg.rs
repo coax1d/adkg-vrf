@@ -4,6 +4,7 @@ use hashbrown::HashMap;
 
 use crate::bls::threshold::AggThresholdSig;
 use crate::bls::vanilla::StandaloneSig;
+use crate::Error;
 
 pub struct SignatureAggregator<C: Pairing> {
     // to verify BLS sigs with the keys in G2
@@ -40,26 +41,26 @@ impl<'a, C: Pairing> Session<'a, C> {
         // params.aggregate_augmented_sigs(self.augmented_sigs)
     }
 
-    /// Signatures MUST
+    /// Signatures MUST be
     /// 1. valid on the message
     /// 2. from a known pk
     /// duplicates allowed
-    /// TODO: return result of indices
-    pub fn append_verify_sig(&mut self, sig: StandaloneSig<C>) {
-        let (bgpk, j) = {
-            let x = self.pks.get(&sig.pk);
-            assert!(x.is_some());
-            x.unwrap().clone()
-        };
-        assert!(self.augmented_sigs[j].is_none());
-        sig.verify_unoptimized(self.message.into(), self.g2);
+    pub fn append_verify_sig(&mut self, sig: StandaloneSig<C>) -> Result<(), Error> {
+        let (bgpk, j) = self.pks.get(&sig.pk).ok_or(Error::UnknownSigner)?.clone();
+        if self.augmented_sigs[j].is_some() {
+            return Err(Error::DuplicateSignature);
+        }
+        if !sig.verify_unoptimized(self.message.into(), self.g2) {
+            return Err(Error::InvalidSignature);
+        }
         self.augmented_sigs[j] = Some(AggThresholdSig {
             bls_sig_with_pk: sig,
             bgpk,
-        })
+        });
+        Ok(())
     }
 
-    pub fn append_verify_sigs(&mut self, sigs: Vec<StandaloneSig<C>>) {
-        sigs.into_iter().for_each(|s| self.append_verify_sig(s));
+    pub fn append_verify_sigs(&mut self, sigs: Vec<StandaloneSig<C>>) -> Result<(), Error> {
+        sigs.into_iter().try_for_each(|s| self.append_verify_sig(s))
     }
 }

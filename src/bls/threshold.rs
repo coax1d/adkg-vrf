@@ -35,23 +35,34 @@ impl<C: Pairing> ThresholdVk<C> {
         }
     }
 
-    pub fn verify_unoptimized(&self, sig: &AggThresholdSig<C>, message: C::G1) {
-        sig.bls_sig_with_pk
-            .verify_unoptimized(message, self.g2.into());
-        assert_eq!(
-            C::pairing(self.g1.into(), sig.bgpk),
-            C::multi_pairing(
+    #[must_use]
+    pub fn verify_unoptimized(&self, sig: &AggThresholdSig<C>, message: C::G1) -> bool {
+        if !sig
+            .bls_sig_with_pk
+            .verify_unoptimized(message, self.g2.into())
+        {
+            return false;
+        }
+        C::pairing(self.g1.into(), sig.bgpk)
+            == C::multi_pairing(
                 &[self.c, self.h1],
-                &[self.g2.into(), sig.bls_sig_with_pk.pk]
+                &[self.g2.into(), sig.bls_sig_with_pk.pk],
             )
-        );
     }
 
-    pub fn vuf_unoptimized(&self, sig: &AggThresholdSig<C>, message: C::G1) -> PairingOutput<C> {
-        self.verify_unoptimized(sig, message);
-        C::multi_pairing(
+    /// Verifies the threshold signature and returns the VUF output, or `None` if invalid.
+    #[must_use]
+    pub fn vuf_unoptimized(
+        &self,
+        sig: &AggThresholdSig<C>,
+        message: C::G1,
+    ) -> Option<PairingOutput<C>> {
+        if !self.verify_unoptimized(sig, message) {
+            return None;
+        }
+        Some(C::multi_pairing(
             &[(-message).into(), sig.bls_sig_with_pk.sig],
             &[sig.bgpk, self.h2],
-        )
+        ))
     }
 }

@@ -9,6 +9,8 @@ use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::vec::Vec;
 
+use crate::Error;
+
 /// An Aggregatable **Publicly Verifiable Secret Sharing** (PVSS) protocol.
 
 /// The purpose of a *threshold secret sharing* protocol is to decompose a secret into `n` chunks
@@ -42,12 +44,11 @@ pub struct Config<
 }
 
 impl<C: Pairing> Config<C> {
-    pub fn new(n: usize, t: usize) -> Result<Self, ()> {
+    pub fn new(n: usize, t: usize) -> Result<Self, Error> {
         if !(n > 0 && t > 0 && t <= n) {
-            // todo: test t = 1, t = n
-            return Err(());
+            return Err(Error::InvalidConfig);
         }
-        let domain = GeneralEvaluationDomain::new(n).ok_or(())?;
+        let domain = GeneralEvaluationDomain::new(n).ok_or(Error::InvalidConfig)?;
         Ok(Self {
             n,
             t,
@@ -71,7 +72,7 @@ pub struct Params<
 }
 
 impl<C: Pairing> Params<C> {
-    pub fn new(signer_pks: Vec<C::G2Affine>, t: usize) -> Result<Self, ()> {
+    pub fn new(signer_pks: Vec<C::G2Affine>, t: usize) -> Result<Self, Error> {
         let n = signer_pks.len();
         let config = Config::new(n, t)?;
         Ok(Self { config, signer_pks })

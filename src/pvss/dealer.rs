@@ -4,13 +4,14 @@ use ark_ff::Zero;
 use ark_poly::{DenseUVPolynomial, Polynomial};
 
 use crate::pvss::{Params, SecretSharing, SecretSharingWithWitness};
+use crate::Error;
 use ark_poly::univariate::DensePolynomial;
 use ark_std::rand::Rng;
 use ark_std::vec::Vec;
 use ark_std::{end_timer, start_timer, UniformRand};
 
 impl<C: Pairing> Params<C> {
-    pub fn deal<R: Rng>(&self, rng: &mut R) -> Result<SecretSharingWithWitness<C>, ()> {
+    pub fn deal<R: Rng>(&self, rng: &mut R) -> Result<SecretSharingWithWitness<C>, Error> {
         let f = DensePolynomial::rand(self.config.t - 1, rng);
         let sh = C::ScalarField::rand(rng);
         self._deal(f, sh)
@@ -23,11 +24,13 @@ impl<C: Pairing> Params<C> {
         ssk: C::ScalarField,
         sh: C::ScalarField,
         rng: &mut R,
-    ) -> Result<SecretSharingWithWitness<C>, ()> {
+    ) -> Result<SecretSharingWithWitness<C>, Error> {
         let t = self.config.t;
         let mut coeffs = Vec::with_capacity(t);
         coeffs.push(ssk); // constant term
-        coeffs.extend(&DensePolynomial::rand(t - 2, rng).coeffs); // ensures the leading coeff is not `0`
+        if t > 1 {
+            coeffs.extend(&DensePolynomial::rand(t - 2, rng).coeffs); // ensures the leading coeff is not `0`
+        }
         assert_eq!(coeffs[0], ssk);
         assert!(!coeffs[t - 1].is_zero());
         let f = DensePolynomial::from_coefficients_vec(coeffs);
@@ -38,14 +41,11 @@ impl<C: Pairing> Params<C> {
         &self,
         f_mon: DensePolynomial<C::ScalarField>,
         sh: C::ScalarField,
-    ) -> Result<SecretSharingWithWitness<C>, ()> {
+    ) -> Result<SecretSharingWithWitness<C>, Error> {
         let ssk = f_mon[0];
         if ssk.is_zero() || sh.is_zero() || f_mon.degree() != self.config.t - 1 {
-            return Err(());
+            return Err(Error::InvalidDealing);
         }
-        assert!(!ssk.is_zero());
-        assert!(!sh.is_zero());
-        assert_eq!(f_mon.degree(), self.config.t - 1);
         let f_lag: Vec<C::ScalarField> = f_mon
             .evaluate_over_domain(self.config.domain)
             .evals

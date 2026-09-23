@@ -1,5 +1,6 @@
 use crate::bls::vanilla::{hash_to_curve, sign_point, verify_on_point};
 use crate::pvss::SecretSharingWithWitness;
+use crate::Error;
 use ark_ec::hashing::curve_maps::wb::{WBConfig, WBMap};
 use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
 use ark_ec::pairing::Pairing;
@@ -62,7 +63,7 @@ where
         hash_to_curve::<C::G2, _>(public_keys)
     }
 
-    pub fn verify_all_sigs(&self) -> Result<(), ()> {
+    pub fn verify_all_sigs(&self) -> Result<(), Error> {
         let message_hash = self.hash_pks();
         let g1 = C::G1::generator();
         if verify_on_point::<C>(self.sig_c, message_hash, self.c, g1)
@@ -71,7 +72,7 @@ where
         {
             Ok(())
         } else {
-            Err(())
+            Err(Error::InvalidReceiptSignature)
         }
     }
 
@@ -99,7 +100,7 @@ impl<C: Pairing> Transcript<C> {
     }
 
     /// `c`s and `h1`s in the receipts sum up to `c` and `h1` in the secret sharing.
-    pub fn check_consistency(&self) -> Result<(), ()> {
+    pub fn check_consistency(&self) -> Result<(), Error> {
         let cs: Vec<_> = self.receipts.iter().map(|(r, _w)| r.c).collect();
         let h1s: Vec<_> = self.receipts.iter().map(|(r, _w)| r.h1).collect();
         let ws: Vec<_> = self
@@ -107,13 +108,13 @@ impl<C: Pairing> Transcript<C> {
             .iter()
             .map(|(_, w)| C::ScalarField::from(*w))
             .collect();
-        let c = C::G1::msm(&cs, &ws).unwrap();
+        let c = C::G1::msm(&cs, &ws).map_err(|_| Error::MsmFailed)?;
         if c.into_affine() != self.agg_ss.payload.c {
-            return Err(());
+            return Err(Error::InconsistentTranscript);
         }
-        let h1 = C::G1::msm(&h1s, &ws).unwrap();
+        let h1 = C::G1::msm(&h1s, &ws).map_err(|_| Error::MsmFailed)?;
         if h1.into_affine() != self.agg_ss.payload.h1 {
-            return Err(());
+            return Err(Error::InconsistentTranscript);
         }
         Ok(())
     }

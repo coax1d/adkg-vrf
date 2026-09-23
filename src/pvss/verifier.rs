@@ -1,5 +1,6 @@
 use crate::pvss::{Config, SecretSharingWithWitness};
 use crate::utils::BarycentricDomain;
+use crate::Error;
 use ark_ec::pairing::Pairing;
 use ark_ec::VariableBaseMSM;
 use ark_ff::{Field, One, Zero};
@@ -60,7 +61,7 @@ impl<C: Pairing> Verifier<C> {
         ss: &SecretSharingWithWitness<C>,
         signer_pks: &[C::G2Affine],
         rng: &mut R,
-    ) -> Result<(), ()> {
+    ) -> Result<(), Error> {
         let payload = &ss.payload;
 
         // 1, 2, 3, 4
@@ -90,11 +91,10 @@ impl<C: Pairing> Verifier<C> {
             .collect();
 
         let _t = start_timer!(|| "1xG1 + 2xG2 MSMs");
-        let a_term = C::G1::msm(&ss.a, &a_coeffs).map_or_else(|_err| Err(()), |x| Ok(x))?;
+        let a_term = C::G1::msm(&ss.a, &a_coeffs).map_err(|_| Error::MsmFailed)?;
         let bgpk_at_z =
-            C::G2::msm(&payload.bgpk, &lis_size_n_at_z).map_or_else(|_err| Err(()), |x| Ok(x))?;
-        let pk_at_z =
-            C::G2::msm(&signer_pks, &lis_size_n_at_z).map_or_else(|_err| Err(()), |x| Ok(x))?;
+            C::G2::msm(&payload.bgpk, &lis_size_n_at_z).map_err(|_| Error::MsmFailed)?;
+        let pk_at_z = C::G2::msm(&signer_pks, &lis_size_n_at_z).map_err(|_| Error::MsmFailed)?;
         end_timer!(_t);
 
         if C::multi_pairing(
@@ -109,7 +109,7 @@ impl<C: Pairing> Verifier<C> {
         {
             Ok(())
         } else {
-            Err(())
+            Err(Error::InvalidSharing)
         }
     }
 }

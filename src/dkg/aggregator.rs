@@ -1,6 +1,7 @@
 use crate::dkg;
 use crate::dkg::transcript::{ContributionReceipt, Transcript};
 use crate::pvss::SecretSharingWithWitness;
+use crate::Error;
 use ark_ec::hashing::curve_maps::wb::{WBConfig, WBMap};
 use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
 use ark_ec::pairing::Pairing;
@@ -34,7 +35,7 @@ where
         }
     }
 
-    pub fn add<R: Rng>(&mut self, transcript: Transcript<C>, rng: &mut R) -> Result<(), ()> {
+    pub fn add<R: Rng>(&mut self, transcript: Transcript<C>, rng: &mut R) -> Result<(), Error> {
         let new_receipts: Vec<_> = transcript
             .receipts
             .iter()
@@ -72,24 +73,19 @@ where
             *self.receipts.entry(r.clone()).or_insert(0) += w;
         }
 
-        if self.agg_ss.is_none() {
-            self.agg_ss = Some(transcript.agg_ss);
-        } else {
-            let new_agg_ss = self
-                .agg_ss
-                .clone()
-                .unwrap()
-                .aggregate_with(vec![transcript.agg_ss]);
-            self.agg_ss = Some(new_agg_ss);
-        }
+        self.agg_ss = Some(match self.agg_ss.take() {
+            None => transcript.agg_ss,
+            Some(agg_ss) => agg_ss.aggregate_with(vec![transcript.agg_ss]),
+        });
         Ok(())
     }
 
-    pub fn get_transcript(&self) -> Transcript<C> {
-        Transcript {
-            agg_ss: self.agg_ss.clone().unwrap(),
+    /// Returns the aggregated transcript, or `None` if nothing has been aggregated yet.
+    pub fn get_transcript(&self) -> Option<Transcript<C>> {
+        Some(Transcript {
+            agg_ss: self.agg_ss.clone()?,
             receipts: self.receipts.clone().into_iter().collect(),
-        }
+        })
     }
 
     fn aggregated_dealer_pks(&self) -> HashSet<C::G1Affine> {
@@ -134,7 +130,7 @@ mod tests {
         // 1. aggregation of a single transcript is still the same transcript
         let mut agg1 = agg.clone();
         assert!(agg1.add(ss1.clone(), rng).is_ok());
-        let expected_ss1 = agg1.get_transcript();
+        let expected_ss1 = agg1.get_transcript().unwrap();
         assert_eq!(expected_ss1.agg_ss, ss1.agg_ss);
         assert_eq!(expected_ss1.receipts, ss1.receipts); // order of receipts may differ for n > 1
 
@@ -145,7 +141,7 @@ mod tests {
 
         // 3. can aggregate 2 singletons
         assert!(agg1.add(ss2, rng).is_ok());
-        let ss12 = agg1.get_transcript();
+        let ss12 = agg1.get_transcript().unwrap();
         assert!(dkg.verify(&ss12, rng).is_ok());
         assert_eq!(ss12.receipts.len(), 2);
 
@@ -153,13 +149,13 @@ mod tests {
         let mut agg2 = agg.clone();
         assert!(agg2.add(ss12, rng).is_ok());
         assert!(agg2.add(ss3, rng).is_ok());
-        let ss123 = agg2.get_transcript();
+        let ss123 = agg2.get_transcript().unwrap();
         assert!(dkg.verify(&ss123, rng).is_ok());
         assert_eq!(ss123.receipts.len(), 3);
 
         // 5. 12 + 123
         assert!(agg1.add(ss123, rng).is_ok());
-        let ss = agg1.get_transcript();
+        let ss = agg1.get_transcript().unwrap();
         assert!(dkg.verify(&ss, rng).is_ok());
         assert_eq!(ss.receipts.len(), 3);
         assert_eq!(ss.receipts.iter().map(|(_, w)| w).sum::<u32>(), 5); // TODO: map
