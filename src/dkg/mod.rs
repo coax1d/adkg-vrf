@@ -7,6 +7,7 @@ use ark_ec::hashing::curve_maps::wb::{WBConfig, WBMap};
 use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
 use ark_ec::pairing::Pairing;
 use ark_ec::CurveGroup;
+use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 use ark_std::vec;
 use ark_std::vec::Vec;
@@ -121,7 +122,19 @@ where
             .flatten()
             .filter(|(_r, w)| *w > 0)
             .for_each(|(r, w)| *receipts_map.entry(r).or_insert(0) += w);
-        let receipts: Vec<_> = receipts_map.into_iter().collect();
+        // A canonical order: the map's iteration order depends on its per-instance hasher seed
+        // (foldhash seeds from the stack pointer), which would make e.g. on-chain aggregation
+        // non-deterministic. Receipts are the map's keys, so the sort keys are distinct.
+        let mut keyed: Vec<_> = receipts_map
+            .into_iter()
+            .map(|(receipt, w)| {
+                let mut key = Vec::new();
+                let _ = receipt.serialize_compressed(&mut key);
+                (key, (receipt, w))
+            })
+            .collect();
+        keyed.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        let receipts: Vec<_> = keyed.into_iter().map(|(_, receipt)| receipt).collect();
         Transcript { agg_ss, receipts }
     }
 

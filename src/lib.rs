@@ -75,69 +75,17 @@ pub type DkgTranscript = transcript::Transcript<ark_bls12_381::Bls12_381>;
 
 #[cfg(test)]
 mod tests {
-    use crate::bls::threshold::{AggThresholdSig, ThresholdVk};
-    use crate::bls::vanilla::{BlsSigner, StandaloneSig};
+    use crate::agg::{aggregate, SignatureAggregator};
+    use crate::bls::threshold::ThresholdVk;
+    use crate::bls::vanilla::BlsSigner;
     use crate::dkg::transcript::Transcript;
     use crate::dkg::Dkg;
-    use crate::utils::BarycentricDomain;
     use crate::{pvss, Error};
     use ark_bls12_381::{Bls12_381, G1Affine, G1Projective, G2Projective};
-    use ark_ec::pairing::Pairing;
-    use ark_ec::{AffineRepr, CurveGroup, PrimeGroup, VariableBaseMSM};
-    use ark_ff::Zero;
-    use ark_poly::EvaluationDomain;
+    use ark_ec::{CurveGroup, PrimeGroup};
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
     use ark_std::test_rng;
     use ark_std::vec::Vec;
-    use hashbrown::HashMap;
-
-    pub fn aggregator<C: Pairing>(
-        signer_pks: &[C::G2Affine],
-        bgpks: Vec<C::G2Affine>,
-    ) -> crate::agg::SignatureAggregator<C> {
-        let pks: HashMap<_, _> = signer_pks
-            .iter()
-            .cloned()
-            .zip(bgpks)
-            .enumerate()
-            .map(|(j, (signer_pk_j, bgpk_j))| (signer_pk_j, (bgpk_j, j)))
-            .collect();
-        crate::agg::SignatureAggregator {
-            g2: C::G2Affine::generator(),
-            pks,
-        }
-    }
-
-    pub fn aggregate_augmented_sigs<C: Pairing>(
-        augmented_sigs: Vec<Option<AggThresholdSig<C>>>,
-        config: &pvss::Config<C>,
-    ) -> AggThresholdSig<C> {
-        assert_eq!(augmented_sigs.len(), config.n);
-        let mut bitmask: Vec<bool> = augmented_sigs.iter().map(|o| o.is_some()).collect();
-        bitmask.resize(config.domain.size(), false);
-        let set_bits_count = bitmask.iter().filter(|b| **b).count();
-        assert!(set_bits_count >= config.t);
-        let lis = BarycentricDomain::from_subset(config.domain, &bitmask)
-            .lagrange_basis_at(C::ScalarField::zero());
-        let augmented_sigs: Vec<AggThresholdSig<C>> =
-            augmented_sigs.into_iter().flatten().collect();
-        let bls_sigs: Vec<_> = augmented_sigs
-            .iter()
-            .map(|s| s.bls_sig_with_pk.sig)
-            .collect();
-        let bls_pks: Vec<_> = augmented_sigs
-            .iter()
-            .map(|s| s.bls_sig_with_pk.pk)
-            .collect();
-        let bgpks: Vec<_> = augmented_sigs.iter().map(|s| s.bgpk).collect();
-        let asig = C::G1::msm(&bls_sigs, &lis).unwrap().into_affine();
-        let apk = C::G2::msm(&bls_pks, &lis).unwrap().into_affine();
-        let abgpk = C::G2::msm(&bgpks, &lis).unwrap().into_affine();
-        AggThresholdSig {
-            bls_sig_with_pk: StandaloneSig { sig: asig, pk: apk },
-            bgpk: abgpk,
-        }
-    }
 
     /// Runs the full DKG -> threshold-sign -> VUF pipeline for `n` signers with threshold `t`,
     /// with `num_dealers` of `t_dkg` required dealers actually dealing.
@@ -175,7 +123,8 @@ mod tests {
 
         let config = keys.config();
         let threshold_vk = ThresholdVk::from_share(&keys.secret_sharing);
-        let sig_aggregator = aggregator::<Bls12_381>(&signers_pks, keys.secret_sharing.bgpk);
+        let sig_aggregator =
+            SignatureAggregator::<Bls12_381>::new(&signers_pks, &keys.secret_sharing.bgpk).unwrap();
 
         let message = G1Projective::generator();
         let sigs: Vec<_> = signers.iter().map(|s| s.sign_g1(message)).collect();
@@ -183,21 +132,72 @@ mod tests {
         let mut sig_agg_session_n = sig_aggregator.start_session(message.into_affine());
         sig_agg_session_n.append_verify_sigs(sigs.clone()).unwrap();
         let augmented_sigs_n = sig_agg_session_n.finalize();
-        let threshold_sig_n = aggregate_augmented_sigs(augmented_sigs_n, &config);
+        let threshold_sig_n = aggregate(augmented_sigs_n, &config).unwrap();
         let vuf_n = threshold_vk
             .vuf_unoptimized(&threshold_sig_n, message)
             .expect("valid threshold signature");
 
         let mut sig_agg_session_t = sig_aggregator.start_session(message.into_affine());
         sig_agg_session_t
-            .append_verify_sigs(sigs.into_iter().take(t).collect())
+            .append_verify_sigs(sigs.iter().cloned().take(t).collect())
             .unwrap();
         let augmented_sigs_t = sig_agg_session_t.finalize();
-        let threshold_sig_t = aggregate_augmented_sigs(augmented_sigs_t, &config);
+        let threshold_sig_t = aggregate(augmented_sigs_t, &config).unwrap();
         let vuf_t = threshold_vk
             .vuf_unoptimized(&threshold_sig_t, message)
             .expect("valid threshold signature");
         assert_eq!(vuf_t, vuf_n);
+
+        // Fewer than `t` signatures don't make a threshold signature.
+        let mut sig_agg_session_short = sig_aggregator.start_session(message.into_affine());
+        sig_agg_session_short
+            .append_verify_sigs(sigs.into_iter().take(t - 1).collect())
+            .unwrap();
+        assert_eq!(
+            aggregate(sig_agg_session_short.finalize(), &config).err(),
+            Some(Error::NotEnoughSignatures)
+        );
+    }
+
+    #[test]
+    fn aggregation_is_order_independent() {
+        let rng = &mut test_rng();
+
+        let dealers: Vec<_> = (0..3).map(|_| BlsSigner::<Bls12_381>::new(rng)).collect();
+        let dealer_pks: Vec<G1Affine> = dealers.iter().map(|d| d.bls_pk_g1).collect();
+        let signers_pks: Vec<_> = (0..4)
+            .map(|_| BlsSigner::<Bls12_381>::new(rng).bls_pk_g2)
+            .collect();
+        let dkg = Dkg::<Bls12_381>::new(signers_pks, 3, dealer_pks, 2).unwrap();
+        let transcripts: Vec<_> = dealers
+            .iter()
+            .map(|d| dkg.deal_and_sign(rng, d.pk_in_g1()).unwrap())
+            .collect();
+
+        let serialized = |order: &[usize]| {
+            let agg = Dkg::<Bls12_381>::aggregate(
+                order.iter().map(|&i| transcripts[i].clone()).collect(),
+            );
+            let mut bytes = Vec::new();
+            agg.serialize_compressed(&mut bytes).unwrap();
+            bytes
+        };
+        // The aggregate's receipts must not depend on the input order (or on hash-map seeds),
+        // e.g. so that a runtime aggregating on-chain stays deterministic.
+        let reference = serialized(&[0, 1, 2]);
+        for order in [[2, 1, 0], [1, 2, 0], [0, 2, 1]] {
+            assert_eq!(serialized(&order), reference);
+        }
+    }
+
+    #[test]
+    fn aggregator_rejects_mismatched_or_duplicate_signers() {
+        let rng = &mut test_rng();
+        let pks: Vec<_> = (0..2)
+            .map(|_| BlsSigner::<Bls12_381>::new(rng).bls_pk_g2)
+            .collect();
+        assert!(SignatureAggregator::<Bls12_381>::new(&pks, &pks[..1]).is_err());
+        assert!(SignatureAggregator::<Bls12_381>::new(&[pks[0], pks[0]], &pks).is_err());
     }
 
     #[test]

@@ -23,6 +23,8 @@ pub enum Error {
     DuplicateSignature,
     /// A BLS signature doesn't verify.
     InvalidSignature,
+    /// Fewer than `t` signatures to aggregate into a threshold signature.
+    NotEnoughSignatures,
 }
 
 impl fmt::Display for Error {
@@ -38,6 +40,7 @@ impl fmt::Display for Error {
             Error::UnknownSigner => "unknown signer",
             Error::DuplicateSignature => "duplicate signature",
             Error::InvalidSignature => "invalid signature",
+            Error::NotEnoughSignatures => "not enough signatures",
         };
         f.write_str(msg)
     }
